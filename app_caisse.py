@@ -1,68 +1,59 @@
 import io
-import sqlite3
 from datetime import datetime
 import pandas as pd
 import plotly.express as px
+import psycopg2
 import streamlit as st
+
+# Imports ReportLab pour le PDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A6
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="Gestion de Caisse - Entreprise de Nettoyage",
-    page_icon="🧹",
-    layout="wide",
-)
+# --- CONNEXION À NEON POSTGRESQL ---
+def get_connection():
+    # Récupère l'URL stockée dans st.secrets
+    return psycopg2.connect(st.secrets["postgres"]["url"])
 
-# --- INITIALISATION DE LA BASE DE DONNÉES SQLITE ---
-DB_NAME = "caisse_nettoyage.db"
-
-
+# --- INITIALISATION DE LA TABLE ---
 def init_db():
-  conn = sqlite3.connect(DB_NAME)
-  c = conn.cursor()
-  c.execute("""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            type TEXT,
-            categorie TEXT,
-            montant REAL,
-            mode_paiement TEXT,
+            id SERIAL PRIMARY KEY,
+            date VARCHAR(10),
+            type VARCHAR(20),
+            categorie VARCHAR(100),
+            montant NUMERIC(12, 2),
+            mode_paiement VARCHAR(50),
             description TEXT
         )
-    """)
-  conn.commit()
-  conn.close()
-
+    ''')
+    conn.commit()
+    c.close()
+    conn.close()
 
 init_db()
 
-
-# --- FONCTIONS UTILES ---
-def ajouter_transaction(
-    date, type_trans, categorie, montant, mode_paimet, description
-):
-  conn = sqlite3.connect(DB_NAME)
-  c = conn.cursor()
-  c.execute(
-      """
+# --- FONCTIONS REQUÊTES ---
+def ajouter_transaction(date, type_trans, categorie, montant, mode_paimet, description):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
         INSERT INTO transactions (date, type, categorie, montant, mode_paiement, description)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-      (date, type_trans, categorie, montant, mode_paimet, description),
-  )
-  conn.commit()
-  conn.close()
-
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (date, type_trans, categorie, montant, mode_paimet, description))
+    conn.commit()
+    c.close()
+    conn.close()
 
 def charger_transactions():
-  conn = sqlite3.connect(DB_NAME)
-  df = pd.read_sql_query("SELECT * FROM transactions ORDER BY id DESC", conn)
-  conn.close()
-  return df
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM transactions ORDER BY id DESC", conn)
+    conn.close()
+    return df
 
 
 # --- FONCTION DE GÉNÉRATION DU PDF EN MÉMOIRE ---
